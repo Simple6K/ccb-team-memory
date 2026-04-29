@@ -1,0 +1,27 @@
+[project]
+name = "ccb-team-memory"
+version = "1.0.0"
+description = "Enterprise team memory sync and extraction for ccb"
+requires-python = ">=3.13"
+authors = [{ name = "ccb-team" }]
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+team-memory = "team_memory.cli.main:main"
+
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+team_memory = ["templates/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

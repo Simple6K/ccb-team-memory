@@ -1,0 +1,11 @@
+#!/bin/bash
+# 提交前自动移除 Claude Co-Authored-By 行，保持 git 历史干净。
+# 启用方式: git config core.hooksPath .githooks
+
+COMMIT_MSG_FILE="$1"
+
+if [ -f "$COMMIT_MSG_FILE" ]; then
+    # 移除包含 Co-Authored-By: Claude 的行
+    sed -i '' '/^Co-Authored-By: Claude/d' "$COMMIT_MSG_FILE" 2>/dev/null || \
+    sed -i '/^Co-Authored-By: Claude/d' "$COMMIT_MSG_FILE"
+fi

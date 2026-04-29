@@ -1,0 +1,24 @@
+# ccb-annto-memory.yaml — ccb-team-memory 自动发现配置示例
+#
+# 放置位置：项目根目录的父目录
+#   $(git rev-parse --show-toplevel)/../ccb-annto-memory.yaml
+#
+# ccb-team-memory 自动向上查找此文件，实现零配置拉取团队记忆。
+# 同一父目录下的多个项目可共享此配置。
+
+# ── 团队记忆（跨项目共享） ──
+team_memory:
+  repo: git@github.com:your-org/team-memories.git
+  branch: main
+  path: shared/
+
+# ── 项目记忆（本项目专属） ──
+project_memory:
+  repo: git@github.com:your-org/team-memories.git
+  branch: main
+  path: projects/your-project-name/
+
+# ── 项目身份（push 操作必填） ──
+# project.url 必须与本地 git remote 100% 匹配，否则 push 被拒绝
+project:
+  url: git@github.com:your-org/your-project.git
