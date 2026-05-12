@@ -50,7 +50,7 @@ def cmd_init(args: argparse.Namespace) -> None:
     root = find_project_root()
     if not root:
         print("Error: 未找到 ccb-annto-memory.yaml", file=sys.stderr)
-        print("  在项目父目录创建 ccb-annto-memory.yaml，或运行:", file=sys.stderr)
+        print("  在项目目录创建 ccb-annto-memory.yaml，或运行:", file=sys.stderr)
         print("    team-memory init --generate-yaml --team-repo <url>", file=sys.stderr)
         sys.exit(1)
 
@@ -94,7 +94,7 @@ def cmd_init(args: argparse.Namespace) -> None:
                 print("\nOptions:", file=sys.stderr)
                 print("  team-memory init --repo <url>", file=sys.stderr)
                 print("  team-memory init --generate-yaml --team-repo <url>", file=sys.stderr)
-                print("  Or create ccb-annto-memory.yaml in a parent directory.", file=sys.stderr)
+                print("  Or create ccb-annto-memory.yaml in the project directory.", file=sys.stderr)
                 sys.exit(1)
             project_name = get_project_name(root, config)
             if not project_name:
@@ -131,7 +131,7 @@ def register_init_parser(sub: argparse._SubParsersAction) -> None:
     p.add_argument("--no-install", action="store_true", help="Skip installing ccb hooks")
     p.add_argument("--config-dir", default=None, help="ccb config directory (e.g., ~/.ccb-dev or ~/.ccb)")
     # V4.1: YAML generation options
-    p.add_argument("--generate-yaml", action="store_true", help="Generate ccb-annto-memory.yaml in parent directory")
+    p.add_argument("--generate-yaml", action="store_true", help="Generate ccb-annto-memory.yaml in project directory")
     p.add_argument("--team-repo", default=None, help="Team memory Git repo URL (for --generate-yaml)")
     p.add_argument("--project-repo", default=None, help="Project memory Git repo URL (for --generate-yaml)")
     p.add_argument("--team-path", default=None, help="Team memory subdirectory within repo (default: shared/)")

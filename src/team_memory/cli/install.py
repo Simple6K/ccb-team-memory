@@ -5,7 +5,7 @@ import os
 import sys
 
 from ..config import find_project_root
-from ..services.installer import install_all, uninstall_hooks
+from ..services.installer import install_all, uninstall_hooks, uninstall_skill
 
 
 def _apply_config_dir(config_dir: str | None) -> None:
@@ -32,8 +32,10 @@ def cmd_install(args: argparse.Namespace) -> None:
 def cmd_uninstall(args: argparse.Namespace) -> None:
     _apply_config_dir(args.config_dir)
     root = find_project_root()
-    ok, msg = uninstall_hooks(root, global_hooks=True)
-    print(msg)
+    ok_hooks, msg_hooks = uninstall_hooks(root, global_hooks=True)
+    ok_skill, msg_skill = uninstall_skill(root, global_skill=True)
+    print(msg_hooks)
+    print(msg_skill)
 
 
 def register_install_parsers(sub: argparse._SubParsersAction) -> None:

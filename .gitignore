@@ -6,3 +6,6 @@ __pycache__/
 build/
 uv.lock
 *.egg-info/
+dist/
+.DS_Store
+CLAUDE.md

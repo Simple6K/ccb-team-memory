@@ -169,6 +169,8 @@ def scan_directory(dir_path: str) -> dict[str, list[SecretMatch]]:
     for md_file in sorted(base.rglob("*.md")):
         if ".git" in md_file.parts:
             continue
+        if "_staging" in md_file.parts:
+            continue
         matches = scan_file(str(md_file))
         if matches:
             results[str(md_file.relative_to(base))] = matches

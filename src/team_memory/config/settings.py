@@ -158,6 +158,24 @@ def save_settings_json(data: dict, project_root: Path | None = None) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n")
 
 
+def _is_self_source_dir(root: Path) -> bool:
+    """Check if root is the ccb-team-memory source directory itself.
+
+    Prevents the tool from treating its own source repo as a user project
+    when CWD happens to be the source directory and a stale .claude/settings.json
+    with teamMemory config exists.
+    """
+    pyproject = root / "pyproject.toml"
+    if not pyproject.is_file():
+        return False
+    try:
+        import tomllib
+        data = tomllib.loads(pyproject.read_text())
+        return data.get("project", {}).get("name") == "ccb-team-memory"
+    except Exception:
+        return False
+
+
 def load_team_memory_config(project_root: Path | None = None) -> TeamMemoryConfig | None:
     """Load team memory config, trying ccb-annto-memory.yaml first (V4.1),
     falling back to settings.json teamMemory section (V4.0 compatibility).
@@ -169,6 +187,10 @@ def load_team_memory_config(project_root: Path | None = None) -> TeamMemoryConfi
     from .annto import find_project_root as _find_project_root
 
     root = project_root or _find_project_root() or Path.cwd()
+
+    # Never treat our own source directory as a configured project.
+    if _is_self_source_dir(root):
+        return None
 
     # 1. Try ccb-annto-memory.yaml (V4.1 priority)
     annto = load_annto_yaml(root)

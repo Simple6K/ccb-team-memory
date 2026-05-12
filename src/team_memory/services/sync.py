@@ -1,6 +1,7 @@
 """Sync orchestration: pull and push operations for team memory.
 
 V4.1: Supports separate team/project memory repos via ccb-annto-memory.yaml.
+V4.6: Push 前置验证集成（verify_before_push）。
 """
 
 import time
@@ -20,6 +21,7 @@ from ..utils.git import (
     set_remote,
     status,
 )
+from .verify import verify_before_push
 
 
 def _get_project_memory_dir(project_root: Path | None = None) -> Path:
@@ -156,6 +158,15 @@ def do_push(config: TeamMemoryConfig, project_root: Path | None = None,
 
     if not is_git_repo(tm_dir):
         return False, f"Team memory not initialized at {tm_dir}. Run 'team-memory init' first."
+
+    # ── V4.6: Push 前置验证（问题 7） ──
+    if not force_skip_scan:
+        if not verify_before_push(tm_dir):
+            return False, (
+                "Push 被阻止: 记忆文件验证失败。"
+                "运行 'team-memory verify' 查看详情，"
+                "或使用 --force 跳过验证。"
+            )
 
     # Push team repo
     ok, msg = _push_repo(tm_dir, config.team_branch)

@@ -1,5 +1,307 @@
 # PRD 变更记录
 
+## 变更 V4.10.1 — 远程路径可配置 + Knowledge Review
+
+**日期**: 2026-05-12
+**版本**: V4.10 → V4.10.1
+**变更类型**: 功能新增 — 知识路径可配置 + commit 审核
+
+### 背景
+
+知识文档远程存储路径硬编码为 `knowledge/`，且 extract 自动 commit 后缺少审核环节。
+
+### 变更
+
+**路径可配置**：`ccb-annto-memory.yaml` 的 `knowledge` 段新增 `repo` 和 `path` 字段，控制知识文档的远程仓库和路径。本地路径 `.claude/team-memory/knowledge/` 不变。
+
+**Knowledge Review**：新增 `knowledge review` 子命令组，基于 unpushed git commit 的审核流程：
+- `knowledge review list` — 列出未发布的知识 commit
+- `knowledge review show <hash> [--full]` — 显示 commit 详情
+- `knowledge review approve` — push 发布
+- `knowledge review reject <hash>` — git revert 撤销
+
+### 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `config/annto.py` | `KnowledgeConfig` 新增 `repo` + `path` 字段；`load_annto_yaml()` 解析；`generate_annto_yaml()` 模板更新 |
+| `knowledge/runner.py` | `_get_knowledge_config()` 返回 `path`；`_git_commit()` 使用动态路径；`_load_tag_dict()` 路径动态化；新增 4 个 review 函数 |
+| `cli/knowledge_cmd.py` | 注册 review 子命令组；新增 4 个命令处理器 |
+| `PRD.md` | knowledge 配置段 + CLI 命令树更新 |
+
+### PRD 变更
+
+- PRD.md：§4.1 knowledge 配置段新增 `repo`/`path`；§6 CLI 命令树新增 review 子命令组
+
+---
+
+## 变更 V4.10 — 知识模块系统（V4.10）
+
+**日期**: 2026-05-12
+**版本**: V4.9 → V4.10
+**变更类型**: 功能新增 + 架构变更 — 二级知识提取框架，取代 review 流程
+
+### 背景
+
+一级记忆抽取已稳定，原始记忆持续累积。但 `load auto` 将全部原始记忆平铺注入上下文，导致"发散"——大量不相关碎片记忆稀释有效上下文。需要二级提取对记忆进行归纳，并支持按需拉取。
+
+### 核心设计决策
+
+1. **提取即审核**：`knowledge extract` 取代原有的 review/approve/integrate 流程。`_staging/` 中的记忆统一通过二次提取进行"审核"——AI 归纳为结构化知识文档
+2. **存入中央仓库**：知识文档写入 team-memory git 仓库的 `knowledge/` 目录（扁平结构）
+3. **拉取注入记忆目录**：`knowledge pull` 按过滤条件拉取知识文档，注入到 `shared/` 和 `projects/`（现有记忆目录）。注入规则：含 `Public` 标签 → `shared/`，否则 → `projects/<name>/`
+4. **注入文件加 `kn-` 前缀**：与原始记忆文件区分
+5. **`load auto` 无需改动**：知识注入到 shared/projects 后，照常读取 MEMORY.md
+6. **SessionStart 自动拉取**：`auto_load()` 前置调用 `run_knowledge_pull()`，静默失败不阻塞记忆加载
+7. **配置在项目级**：过滤条件定义在 `ccb-annto-memory.yaml` 的 `knowledge` 段
+8. **标签完全人工定义**：AI 只能从已有标签字典中选取，不生成新标签
+9. **`doc_id` 由 Python 预生成**：对源文件路径 SHA256 hash，注入到 AI prompt 中
+10. **`_staging/` 保留不动**：提取后不删除，通过 doc_id upsert 自然去重
+
+### 文件清单
+
+**新增**：
+- `src/team_memory/knowledge/__init__.py`
+- `src/team_memory/knowledge/base.py` — KnowledgeExtractor ABC
+- `src/team_memory/knowledge/registry.py` — 提取器自动发现
+- `src/team_memory/knowledge/runner.py` — 提取与拉取编排 + 辅助函数
+- `src/team_memory/knowledge/store.py` — 知识文档读写 + KNOWLEDGE.md 索引 + 过滤逻辑
+- `src/team_memory/knowledge/tags/default.yaml` — 框架内置标签字典
+- `src/team_memory/knowledge/extractors/__init__.py`
+- `src/team_memory/knowledge/extractors/qa.py` — QA 提取器（feedback → qa_pair）
+- `src/team_memory/knowledge/extractors/architecture.py` — 架构提取器
+- `src/team_memory/knowledge/extractors/workflow.py` — 流程提取器
+- `src/team_memory/knowledge/extractors/requirements.py` — 需求提取器
+- `src/team_memory/cli/knowledge_cmd.py` — knowledge 子命令组
+
+**修改**：
+- `src/team_memory/cli/main.py` — 注册 knowledge 子命令
+- `src/team_memory/config/annto.py` — 新增 `KnowledgeConfig` 数据类；解析 YAML `knowledge` 段；新增 `_normalize_yaml_value()` 辅助
+- `src/team_memory/config/__init__.py` — 导出 `KnowledgeConfig`
+- `src/team_memory/services/loader.py` — `auto_load()` 前置执行 `_auto_knowledge_pull()`
+
+### CLI 命令
+
+```
+team-memory knowledge
+├── extract  [--extractor NAME] [--force] [--dry-run]  运行知识提取（取代 review）
+├── pull     [--tags TAGS] [--domain D] [--doc-id ID] [--all] [--dry-run]
+│                                                       拉取知识，注入 shared/projects
+├── list     [--stale]                                 列出知识模块
+├── show     <DOC_ID>                                  显示模块完整内容
+├── status                                              模块统计
+└── clean    [--stale-only]                            清理模块
+```
+
+### 过滤维度（knowledge pull）
+
+| 维度 | 配置项 | CLI 覆盖 | 说明 |
+|------|--------|----------|------|
+| 标签 | `load.auto_tags` | `--tags` | 文档 tags 与过滤 tags 交集非空即匹配 |
+| 领域 | `load.auto_domains` | `--domain` | 匹配 frontmatter `domain` 字段 |
+| 类型 | `load.doc_types` | — | `knowledge` 或 `qa_pair` |
+| 时间 | `load.time_range` | — | 相对时间（`7d`/`24h`）或绝对日期 |
+| 数量 | `load.max_docs` | — | 最多 N 篇，按 `generated_at` 倒序 |
+| 全量 | — | `--all` | 忽略所有过滤，拉取全部 |
+
+各维度 AND 关系。`knowledge/shared/` 始终全量，不受过滤。
+
+### 标签字典配置链
+
+```
+优先级（后层覆盖前层）：
+  1. 框架内置标签字典    → src/team_memory/knowledge/tags/default.yaml
+  2. 团队仓库标签字典    → team-memory/knowledge/.tag-dict.yaml
+  3. 项目级标签字典      → ccb-annto-memory.yaml 的 knowledge.tags 段
+```
+
+### PRD 变更
+
+- PRD.md：§3.1A 标记 review 被取代；§3.10 重写为最终设计；§4.1 新增 knowledge 配置段；§6 CLI 命令更新；§7.2 包结构更新
+- PRD-CHANGELOG.md：本条目更新为最终设计
+
+---
+
+## 变更 V4.6.2 — auto-load 路径修复 + 提取诊断追踪
+
+**日期**: 2026-05-09
+**版本**: V4.6.1 → V4.6.2
+**变更类型**: 缺陷修复 + 诊断增强
+
+### 背景
+
+两个问题：
+1. `generate_auto_load_summary` 使用 `get_project_name()` 构造项目记忆路径，与 YAML 配置中 `project_memory.path` 的目录命名可能不一致，导致项目记忆无法加载
+2. Stop hook 触发 `extract run` 后无任何诊断途径，用户无法判断是 hook 未触发还是提取无新内容
+
+### 核心变更
+
+**auto-load 路径修复** (`services/extract.py`):
+- `generate_auto_load_summary` 优先从 `config.project_path` 提取父目录作为项目路径
+- `project_path` 如为 `.md` 文件路径，取其父目录；否则直接使用
+- `project_path` 为空时回退到 `get_project_name()`
+
+**提取诊断追踪** (`services/extraction_manager.py` + `cli/extract.py`):
+- `ExtractionState` 新增 `last_invocation_at` 和 `last_invocation_result` 字段
+- `ExtractionManager` 新增 `record_invocation()` 方法，记录每次调用（不影响冷却计时）
+- `mark_done()` / `mark_skipped()` 同步记录调用时间和结果
+- `cmd_extract_run` 冷却跳过时调用 `record_invocation("cooldown: ...")`
+- `cmd_extract_status` 展示 `Last invoked` + `Invoke result` 诊断信息
+
+### 影响范围
+
+| 文件 | 改动 |
+|------|------|
+| `services/extract.py` | `generate_auto_load_summary` 项目路径逻辑 |
+| `services/extraction_manager.py` | `ExtractionState` 新增字段、`record_invocation`、`mark_done`/`mark_skipped` 记录 |
+| `cli/extract.py` | `cmd_extract_status` 展示诊断字段、`cmd_extract_run` 冷却时记录 |
+
+### 诊断用法
+
+```bash
+team-memory extract status
+# 关注: Last invoked / Invoke result
+# - (never) → Stop hook 未触发
+# - extracted N → 成功提取
+# - skipped: 无新记忆 → 模型判断无新内容
+# - cooldown: ... → 距上次不足 60 秒
+```
+
+---
+
+## 变更 V4.6.1 — 修复安装版污染问题（父级 YAML 泄露）
+
+**日期**: 2026-04-30
+**版本**: V4.6 → V4.6.1
+**变更类型**: 缺陷修复 — 安装版与源码版行为不一致
+
+### 背景
+
+V4.5 已将 `find_annto_yaml()` 改为只检查当前目录（不向上遍历），源码版行为正确。但通过 `uv tool install` 安装的二进制仍为旧版（向上遍历 + `generate_annto_yaml` 生成在父目录），导致：
+
+1. 父目录的 `ccb-annto-memory.yaml` 污染了所有子目录
+2. 新项目无任何配置，`team-memory pull` 却成功拉取团队记忆
+
+### 核心变更
+
+- `uv tool install --reinstall` 从源码重新安装，安装版与源码版对齐
+- 清理 `~/.local/share/uv/tools/ccb-team-memory/` 下的 `__pycache__` 缓存
+
+### 预防措施
+
+- 每次修改 ccb-team-memory 源码后，必须执行：
+
+  ```bash
+  cd ccb-team-memory && uv tool install --reinstall . && team-memory install --config-dir ~/.ccb-dev
+  ```
+- 考虑在 CI 中自动检测安装版与源码版的一致性
+
+### 不涉及
+
+- 源码（`find_annto_yaml` 行为不变）
+- CLI 命令签名
+- 配置格式
+
+---
+
+## 变更 V4.6 — 提取层完善（提取状态追踪、验证、整合）
+
+**日期**: 2026-04-29
+**版本**: V4.5 → V4.6
+**变更类型**: 功能新增 + 行为增强
+**参考实现**: claude-code `extractMemories.ts` + `autoDream.ts` + `memoryScan.ts`
+
+### 背景
+
+V4.5 提取层只具备 prompt 生成能力（`build_extract_prompt()`），缺失：
+- 提取状态追踪和游标（无法知道哪些对话已处理）
+- 提取后验证（不知道文件是否正确写入）
+- 记忆整合机制（文件只增不减）
+- auto 模式闭环（Stop hook 未注册）
+
+本版本对照 claude-code 的实现模式全面完善提取层。
+
+### 变更详情
+
+#### 新增功能
+
+| 功能 | 文件 | 对应 claude-code |
+|------|------|-----------------|
+| 提取状态追踪 | `services/extraction_manager.py` | `initExtractMemories()` 闭包 |
+| 记忆验证 | `services/verify.py` + `cli/verify_cmd.py` | `extractWrittenPaths()` + frontmatter 校验 |
+| 记忆整合 | `services/consolidation.py` + `cli/consolidate_cmd.py` | `initAutoDream()` 门控链 |
+
+#### 提取 Prompt 增强
+
+| 改动 | 问题 | 对应 claude-code |
+|------|------|-----------------|
+| `ManifestEntry` 增加 name/description/type/scope | 无法按内容去重 | `memoryScan.ts` MemoryHeader |
+| `scan_manifest()` 解析 frontmatter | 只读文件名 | `scanMemoryFiles()` |
+| 按类型分组展示已有记忆 | 平铺难读 | `formatMemoryManifest()` |
+| session 上下文（标识+时间范围） | 不知道分析什么对话 | `runExtraction()` prompt |
+| MEMORY.md 约束精确化（150字符/行、200行上限） | 索引膨胀 | `MAX_ENTRYPOINT_LINES/BYTES` |
+| `get_scope_dirs()` 公共导出 | 重复实现 | `getTeamMemPath()` |
+
+#### Hook 增强
+
+- 新增 **Stop Hook** → `team-memory extract prompt --mode auto`，补齐 auto 模式闭环
+- Push 前置集成 `verify_before_push()`
+
+#### CLI 新增命令
+
+- `team-memory extract history` — 查看提取历史
+- `team-memory verify` — 验证记忆文件完整性
+- `team-memory consolidate [--dry-run|--apply]` — 记忆整合
+
+#### 模板更新
+
+- `templates/extract.md` — 更新为中文，与代码内 prompt 一致
+- `templates/SKILL.md` — 新增 verify、consolidate、extract history 命令
+
+### 测试
+
+- 新增 `test_extraction_manager.py`（14 tests）
+- 新增 `test_verify.py`（13 tests）
+- 全部 68 tests 通过
+
+---
+
+## 变更 V4.5 — find_annto_yaml 仅检查当前目录
+
+**日期**: 2026-04-29
+**版本**: V4.4 → V4.5
+**变更类型**: 行为变更 — 移除向上遍历发现
+
+### 背景
+
+`find_annto_yaml()` 原实现从 cwd 向上逐级查找 `ccb-annto-memory.yaml`，直到文件系统根目录。这会导致在父目录存在同名 YAML 时意外匹配到非当前项目的配置，造成多项目共享的歧义。
+
+### 核心变更
+
+**`find_annto_yaml()`**：移除向上遍历的 while 循环，改为仅检查当前工作目录（或指定 `start` 目录）下是否存在 `ccb-annto-memory.yaml`。
+
+**`find_project_root()`**：docstring 更新，移除 "Walks up" 表述，改为 "Checks start directory"。
+
+**`cli/init.py`**：错误提示从 `在项目父目录创建` 改为 `在项目目录创建`。
+
+### 影响范围
+
+| 模块 | 变更 |
+|------|------|
+| `config/annto.py` | `find_annto_yaml()` 简化为直接检查；`find_project_root()` docstring 更新 |
+| `cli/init.py` | 错误提示文本更新 |
+| `PRD.md` | 7 处引用更新（文件位置、发现流程、验证计划等） |
+
+### 向后兼容
+
+已在使用中的项目，`ccb-annto-memory.yaml` 本就放置在项目根目录下，不受影响。
+
+### 不涉及
+
+- `load_annto_yaml()` — 行为不变
+- `load_team_memory_config()` — 行为不变
+- 密钥扫描、记忆提取、hooks 注册等模块
+
 ## 变更 V4.4 — 五层模块化架构重构
 
 **日期**: 2026-04-29
@@ -109,7 +411,7 @@ V4.3 全面中文化时遗漏了 `installer.py` 中的嵌入式回退模板（`_
 - `installer.py`：`install_skill()` 新增 `global_skill` 参数，`True` 时安装到 `~/.ccb-dev/skills/team-memory/`（或 `~/.claude/skills/`）
 - `installer.py`：`install_all()` 传递 `global_skill=global_hooks`，全局安装时间时安装全局 Skill
 - `installer.py`：`_get_embedded_skill_template()` 回退模板从英文改为中文
-- `openclaw-boad/.claude/skills/team-memory/SKILL.md`：手动覆盖旧英文版为中文
+- `my-project/.claude/skills/team-memory/SKILL.md`：手动覆盖旧英文版为中文
 
 ### 影响范围
 
@@ -239,7 +541,7 @@ team_memory:
 project_memory:
   repo: git@github.com:myorg/team-memories.git
   branch: main
-  path: projects/openclaw-boad/  # 仓库内项目记忆目录
+  path: projects/my-project/  # 仓库内项目记忆目录
 ```
 
 **字段说明**:

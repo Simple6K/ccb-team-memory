@@ -1,6 +1,8 @@
 """CLI 入口 — 顶层解析器，注册子命令，dispatch 到各命令模块。
 
 仅负责 argparse 定义和路由，不包含业务逻辑。
+
+V4.6: 新增 verify、consolidate 子命令。
 """
 
 import argparse
@@ -12,6 +14,10 @@ from .sync import register_sync_parsers
 from .extract import register_extract_parsers
 from .load import register_load_parsers
 from .install import register_install_parsers
+from .verify_cmd import register_verify_parsers
+from .consolidate_cmd import register_consolidate_parsers
+from .review import register_review_parsers
+from .knowledge_cmd import register_knowledge_parsers
 
 
 def main() -> None:
@@ -28,6 +34,10 @@ def main() -> None:
     register_extract_parsers(sub)
     register_load_parsers(sub)
     register_install_parsers(sub)
+    register_verify_parsers(sub)
+    register_consolidate_parsers(sub)
+    register_review_parsers(sub)
+    register_knowledge_parsers(sub)
 
     args = parser.parse_args()
     if args.command is None:

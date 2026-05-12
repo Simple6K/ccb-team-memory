@@ -34,11 +34,22 @@ class ProjectIdentity:
 
 
 @dataclass
+class KnowledgeConfig:
+    """知识模块配置（V4.10 新增，从 ccb-annto-memory.yaml 的 knowledge 段解析）。"""
+    repo: str = ""               # 知识文档远程仓库（空=用 team_memory.repo）
+    path: str = "knowledge/"     # 远程仓库内路径
+    extractors: dict = field(default_factory=dict)  # enabled, default_tags
+    load: dict = field(default_factory=dict)        # auto_tags, auto_domains, doc_types, time_range, max_docs
+    tags: dict = field(default_factory=dict)         # 项目级标签扩展
+
+
+@dataclass
 class AnntoMemoryConfig:
     """Parsed from ccb-annto-memory.yaml (V4.1)."""
     team: MemorySourceConfig = field(default_factory=MemorySourceConfig)
     project: MemorySourceConfig = field(default_factory=MemorySourceConfig)
     identity: ProjectIdentity = field(default_factory=ProjectIdentity)
+    knowledge: KnowledgeConfig = field(default_factory=KnowledgeConfig)
     source_path: Path | None = None  # where the YAML was found
 
     @property
@@ -106,24 +117,39 @@ def parse_simple_yaml(text: str) -> dict:
 # ─── YAML 发现与解析 ────────────────────────────────────────────────────
 
 def find_annto_yaml(start: Path | None = None) -> Path | None:
-    """Search for ccb-annto-memory.yaml walking up from start (default: cwd).
-
-    Returns the first match found.
-    """
+    """Search for ccb-annto-memory.yaml in start directory (default: cwd)."""
     current = (start or Path.cwd()).resolve()
+    candidate = current / _ANTO_YAML_FILENAME
+    return candidate if candidate.is_file() else None
 
-    while True:
-        candidate = current / _ANTO_YAML_FILENAME
-        if candidate.is_file():
-            return candidate
 
-        parent = current.parent
-        if parent == current:
-            # Reached filesystem root
-            break
-        current = parent
+def _normalize_yaml_value(value):
+    """将 parse_simple_yaml 的字符串值转为 Python 原生类型。
 
-    return None
+    YAML 行内列表 '[a, b]' → ['a', 'b']
+    引号包裹 '"str"' → 'str'
+    整数 '8' → 8
+    """
+    if isinstance(value, dict):
+        return {k: _normalize_yaml_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normalize_yaml_value(v) for v in value]
+    if isinstance(value, str):
+        s = value.strip()
+        # 行内列表: [a, b, c]
+        if s.startswith("[") and s.endswith("]"):
+            inner = s[1:-1]
+            items = [item.strip().strip('"').strip("'") for item in inner.split(",") if item.strip()]
+            return [_normalize_yaml_value(item) for item in items]
+        # 整数
+        try:
+            return int(s)
+        except ValueError:
+            pass
+        # 去掉引号包裹
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in ('"', "'"):
+            return s[1:-1]
+    return value
 
 
 def load_annto_yaml(project_root: Path | None = None) -> AnntoMemoryConfig | None:
@@ -143,6 +169,7 @@ def load_annto_yaml(project_root: Path | None = None) -> AnntoMemoryConfig | Non
     team_raw = raw.get("team_memory") or {}
     project_raw = raw.get("project_memory") or {}
     identity_raw = raw.get("project") or {}
+    knowledge_raw = raw.get("knowledge") or {}
 
     if isinstance(team_raw, str):
         team_raw = {"repo": team_raw}
@@ -166,6 +193,13 @@ def load_annto_yaml(project_root: Path | None = None) -> AnntoMemoryConfig | Non
             url=identity_raw.get("url", ""),
             name=identity_raw.get("name", ""),
         ),
+        knowledge=KnowledgeConfig(
+            repo=knowledge_raw.get("repo", "") if isinstance(knowledge_raw, dict) else "",
+            path=_normalize_yaml_value(knowledge_raw.get("path", "knowledge/")) if isinstance(knowledge_raw, dict) else "knowledge/",
+            extractors=_normalize_yaml_value(knowledge_raw.get("extractors", {})) if isinstance(knowledge_raw, dict) else {},
+            load=_normalize_yaml_value(knowledge_raw.get("load", {})) if isinstance(knowledge_raw, dict) else {},
+            tags=_normalize_yaml_value(knowledge_raw.get("tags", {})) if isinstance(knowledge_raw, dict) else {},
+        ),
         source_path=yaml_path,
     )
 
@@ -177,21 +211,19 @@ def generate_annto_yaml(project_root: Path,
                          project_branch: str = "main",
                          team_path: str = "shared/",
                          project_path: str = "") -> Path:
-    """Generate a ccb-annto-memory.yaml template in the project's parent directory.
+    """Generate a ccb-annto-memory.yaml template in the project directory.
 
     Auto-fills project.url from local git remote if available.
     Returns the path to the created file.
     """
     root = project_root.resolve()
-    parent = root.parent
-    yaml_path = parent / _ANTO_YAML_FILENAME
+    yaml_path = root / _ANTO_YAML_FILENAME
 
     local_url = get_git_remote_url(root) or ""
 
     lines = [
         "# ccb-annto-memory.yaml — Auto-discovery config for ccb-team-memory",
         f"# Generated for project: {root.name}",
-        "# This file is shared by all projects under this directory.",
         "",
         "team_memory:",
         f"  repo: {team_repo}",
@@ -207,6 +239,21 @@ def generate_annto_yaml(project_root: Path,
         "project:",
         f"  url: {local_url or 'git@github.com:owner/repo.git'}",
         "",
+        "# Knowledge module config — controls knowledge extraction, filtering, and review (V4.10)",
+        "knowledge:",
+        "  # repo: git@github.com:org/team-memories.git  # 知识文档远程仓库（不配则用 team_memory.repo）",
+        '  path: "knowledge/"                         # 远程仓库内路径',
+        "  extractors:",
+        "    enabled: [qa, architecture, workflow, requirements]",
+        "  load:",
+        "    auto_tags: [研发]",
+        "    auto_domains: [architecture, qa]",
+        "    doc_types: [knowledge, qa_pair]",
+        "    time_range:",
+        "      since: \"7d\"",
+        "    max_docs: 8",
+        "  tags: {}",
+        "",
     ]
 
     yaml_path.write_text("\n".join(lines))
@@ -218,7 +265,7 @@ def generate_annto_yaml(project_root: Path,
 def find_project_root(start: str | Path | None = None) -> Path | None:
     """Find project root via ccb-annto-memory.yaml only.
 
-    Walks up from start (default: cwd) looking for ccb-annto-memory.yaml.
+    Checks start directory (default: cwd) for ccb-annto-memory.yaml.
     Returns CWD if found, None otherwise. No git dependency.
     """
     cwd = Path(start).resolve() if start else Path.cwd()

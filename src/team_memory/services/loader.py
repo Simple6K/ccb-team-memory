@@ -1,4 +1,8 @@
-"""Memory loading: auto-load summary and manual search/load."""
+"""Memory loading: auto-load summary and manual search/load.
+
+V4.10: auto_load 前置执行 knowledge pull，将知识文档注入 shared/ 和 projects/，
+随后 load auto 照常读取 MEMORY.md（现包含知识条目）。
+"""
 
 import json
 from pathlib import Path
@@ -10,13 +14,34 @@ from .extract import generate_auto_load_summary, strip_metadata_fields
 def auto_load(config: TeamMemoryConfig, project_root: Path | None = None) -> str:
     """Generate team memory summary for auto-injection at session start.
 
+    V4.10: 前置执行 knowledge pull，将匹配的知识文档注入 shared/ 和 projects/。
+    随后 load auto 照常读取 MEMORY.md（现同时包含原始记忆和知识条目）。
+
     Returns empty string if auto-load is disabled or no memories exist.
     """
     if not config.load.auto_load:
         return ""
     if not config.enabled:
         return ""
+
+    # V4.10: 前置执行 knowledge pull
+    _auto_knowledge_pull(config, project_root)
+
     return generate_auto_load_summary(config, project_root)
+
+
+def _auto_knowledge_pull(config: TeamMemoryConfig, project_root: Path | None = None) -> None:
+    """SessionStart 时自动执行 knowledge pull。
+
+    按配置中的过滤条件拉取知识文档，注入 shared/ 和 projects/。
+    静默处理——失败不影响记忆加载流程。
+    """
+    try:
+        from ..knowledge.runner import run_knowledge_pull
+        run_knowledge_pull(config, project_root)
+    except Exception:
+        # 知识拉取失败不阻塞记忆加载
+        pass
 
 
 def manual_load(config: TeamMemoryConfig, project_root: Path | None = None,
@@ -43,6 +68,8 @@ def manual_load(config: TeamMemoryConfig, project_root: Path | None = None,
 
     for md_file in sorted(tm_dir.rglob("*.md")):
         if ".git" in md_file.parts:
+            continue
+        if "_staging" in md_file.parts:
             continue
         if md_file.name == "MEMORY.md":
             continue
@@ -110,6 +137,8 @@ def list_memory_files(config: TeamMemoryConfig, project_root: Path | None = None
     files = []
     for md_file in sorted(tm_dir.rglob("*.md")):
         if ".git" in md_file.parts:
+            continue
+        if "_staging" in md_file.parts:
             continue
         rel = str(md_file.relative_to(tm_dir))
         try:

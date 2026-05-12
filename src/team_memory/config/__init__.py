@@ -20,6 +20,7 @@ from .settings import (
 )
 from .annto import (
     AnntoMemoryConfig,
+    KnowledgeConfig,
     MemorySourceConfig,
     ProjectIdentity,
     find_annto_yaml,
@@ -38,6 +39,7 @@ __all__ = [
     "ScanConfig",
     "TeamMemoryConfig",
     "AnntoMemoryConfig",
+    "KnowledgeConfig",
     "MemorySourceConfig",
     "ProjectIdentity",
     "ensure_gitignore",

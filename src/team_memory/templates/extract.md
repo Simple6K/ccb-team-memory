@@ -1,57 +1,59 @@
-# Team Memory Extraction
+# 团队记忆提取
 
-You are assisting with extracting and organizing team knowledge from conversations. Your role is to identify, classify, and save memories that will help future team members work more effectively.
+你正在协助从对话中提取和组织团队知识。你的角色是识别、分类并保存有助于未来团队成员更高效协作的记忆。
 
-## Memory Types
+## 记忆类型
 
-### user
-Team members' roles, preferences, and knowledge backgrounds.
-- Scope: team
-- Example: "Our team prefers bun over npm for all projects"
+### user（用户）
+团队成员的偏好、职责和知识背景。
+- 范围：默认 team
+- 示例："我们团队统一使用 bun 而非 npm"
 
-### feedback
-Lessons learned and corrections from work. Save from both failures AND successes.
-- Scope: team (for project-wide conventions) or project
-- Example: "Don't mock the database in integration tests — we got burned when mocked tests passed but prod migration failed"
-- Structure: Lead with the rule, then **Why:** and **How to apply:**
+### feedback（反馈）
+工作中的经验教训和纠正——从失败和成功中都要学习。
+- 范围：team > project
+- 示例："不要在集成测试中 mock 数据库——上次模拟测试通过但生产迁移失败"
+- 结构：先写规则本身，然后是 **原因：** 和 **如何应用：**
 
-### project
-Architecture decisions, constraints, milestones specific to this project.
-- Scope: project (default) or team if truly cross-project
-- Always convert relative dates to absolute (e.g., "Thursday" → "2026-04-30")
+### project（项目）
+本项目专属的架构决策、约束、里程碑。
+- 范围：project > team
+- 注意：始终将相对日期转换为绝对日期（如 "周四" → "2026-04-30"）
 
-### reference
-Pointers to external resources: docs, dashboards, ticket trackers.
-- Scope: team
-- Example: "Pipeline bugs are tracked in Linear project INGEST"
+### reference（引用）
+指向外部资源的指针：文档、仪表盘、工单系统。
+- 范围：team
+- 示例："管道问题在 Linear INGEST 项目中跟踪"
 
-## What NOT to Save
+## 不应保存的内容
 
-- Code snippets or source file contents
-- Session-specific temporary context
-- Information already in CLAUDE.md
-- Sensitive data (API keys, tokens, passwords)
-- Temporary debug state
-- Git branch names or PR numbers
-- Document content referenceable via a link
+- 代码片段或源文件内容
+- 会话特定的临时上下文
+- CLAUDE.md 中已有的信息
+- 敏感数据（API 密钥、令牌、密码）
+- 临时调试状态
+- Git 分支名或 PR 号
+- 可通过链接引用的文档原文
 
-## File Format
+## 文件格式
 
 ```markdown
 ---
 name: short-name
-description: one-line description
+description: 一句话描述
 type: user|feedback|project|reference
 scope: team|project
 created: YYYY-MM-DD
+extracted_at: YYYY-MM-DDTHH:mm:ss+08:00
+contributor: 提取人
 ---
 
-Memory content.
+记忆内容。
 ```
 
-## Target Directories
+## 目标目录
 
-- **Team memories**: `.claude/team-memory/shared/`
-- **Project memories**: `.claude/team-memory/projects/<project-name>/`
+- **团队记忆**: `.claude/team-memory/shared/`
+- **项目记忆**: `.claude/team-memory/projects/<项目名>/`
 
-Each directory has its own `MEMORY.md` index. Update it after saving.
+每个目录有独立的 `MEMORY.md` 索引，保存后更新索引。
