@@ -246,18 +246,20 @@ def run_knowledge_pull(
     tm_shared.mkdir(parents=True, exist_ok=True)
     for doc in shared_docs:
         _inject_knowledge_doc(knowledge_dir, doc, tm_shared)
-        injected.append(f"shared/kn-{doc.path.name}")
+        name = doc.path.name if doc.path.name.startswith("kn-") else f"kn-{doc.path.name}"
+        injected.append(f"shared/{name}")
 
     # 其他知识 → 按 Public 标签决定目标
     tm_projects = tm_dir / "projects" / project_name
     tm_projects.mkdir(parents=True, exist_ok=True)
     for doc in regular_docs:
+        name = doc.path.name if doc.path.name.startswith("kn-") else f"kn-{doc.path.name}"
         if "Public" in doc.tags:
             _inject_knowledge_doc(knowledge_dir, doc, tm_shared)
-            injected.append(f"shared/kn-{doc.path.name}")
+            injected.append(f"shared/{name}")
         else:
             _inject_knowledge_doc(knowledge_dir, doc, tm_projects)
-            injected.append(f"projects/{project_name}/kn-{doc.path.name}")
+            injected.append(f"projects/{project_name}/{name}")
 
     # 更新 MEMORY.md
     _update_memory_index(tm_shared)
@@ -267,9 +269,10 @@ def run_knowledge_pull(
 
 
 def _inject_knowledge_doc(knowledge_dir: Path, doc, target_dir: Path) -> Path:
-    """将知识文档注入目标目录（加 kn- 前缀）。"""
+    """将知识文档注入目标目录（加 kn- 前缀，已有则不重复加）。"""
     src = knowledge_dir / doc.path
-    target_name = f"kn-{doc.path.name}"
+    name = doc.path.name
+    target_name = name if name.startswith("kn-") else f"kn-{name}"
     target = target_dir / target_name
 
     content = src.read_text()

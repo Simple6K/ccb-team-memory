@@ -22,6 +22,14 @@ argument-hint: "<命令> [参数]"
 - `/team-memory verify` — 验证记忆文件完整性
 - `/team-memory consolidate` — 整合和清理记忆
 - `/team-memory load [查询]` — 搜索并加载团队记忆
+- `/team-memory knowledge extract` — 从 _staging/ 记忆中二次提取知识文档
+- `/team-memory knowledge pull` — 拉取知识文档到项目
+- `/team-memory knowledge review list` — 列出未发布的知识 commit
+- `/team-memory knowledge review show <hash>` — 查看指定 commit 详情
+- `/team-memory knowledge review approve` — 批准发布（push）
+- `/team-memory knowledge review reject <hash>` — 撤销指定 commit
+- `/team-memory knowledge list` — 列出知识模块
+- `/team-memory knowledge status` — 知识模块统计
 - `/team-memory install` — 安装 hooks 和自动同步
 
 ## 使用方式

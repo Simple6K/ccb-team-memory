@@ -32,7 +32,7 @@ def _build_hooks(bin_path: str) -> dict:
                 "hooks": [
                     {
                         "type": "command",
-                        "command": f"{bin_path} pull --quiet && {bin_path} load auto",
+                        "command": f"{bin_path} pull --quiet && {bin_path} knowledge pull && {bin_path} load auto",
                         "shell": "bash",
                         "async": True,
                         "statusMessage": "Syncing team memory...",
