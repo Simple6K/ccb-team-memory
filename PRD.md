@@ -191,7 +191,7 @@ contributor: 提取人姓名
 
 ```
 .claude/team-memory/
-  ├── _staging/          ← 自动提取写入（无需 MEMORY.md）
+  ├── _staging/          ← 自动提取写入（无需 MEMORY.md，仅本地不随 pull 同步）
   ├── shared/            ← 审核通过后移入
   ├── projects/<name>/   ← 审核通过后移入
   └── knowledge/         ← 知识文档（V4.10，knowledge extract 产出）
@@ -298,6 +298,8 @@ team-memory init --generate-yaml --team-repo <url> [--project-repo <url>]
 ```bash
 team-memory pull
 ```
+
+`pull` 使用 git sparse-checkout 排除 `_staging/` 目录。`_staging/` 仅本地存储，不随 pull 同步。只有 `knowledge extract` 在本地读取 `_staging/` 进行二次提取。
 
 #### 3.3.3 推送（`push`）
 
@@ -480,9 +482,10 @@ team-memory consolidate [--dry-run] [--apply] [--force]
 二级提取 = 审核（V4.10 新增，取代原 review 流程）
   team-memory knowledge extract
     → git pull 拉取远程 _staging/ 增量
-    → 全量读取 _staging/ 中所有待审核记忆
+    → 增量读取 _staging/ 中未处理的待审核记忆（通过 .extracted-staging.json 跟踪）
     → 按提取器分类，AI 归纳为结构化知识文档
     → 写入 knowledge/ 目录（扁平结构）
+    → 记录已处理文件到 .extracted-staging.json
     → git commit（不 push）
 
 知识拉取（V4.10 新增）

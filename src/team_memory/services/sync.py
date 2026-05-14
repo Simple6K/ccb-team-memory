@@ -19,6 +19,7 @@ from ..utils.git import (
     pull,
     push_with_retry,
     set_remote,
+    sparse_checkout_exclude,
     status,
 )
 from .verify import verify_before_push
@@ -36,15 +37,26 @@ def _init_single_repo(repo: str, branch: str, target_dir: Path) -> tuple[bool, s
     target_dir.parent.mkdir(parents=True, exist_ok=True)
 
     if is_git_repo(target_dir):
+        _ensure_sparse_checkout(target_dir)
         r = set_remote(target_dir, "origin", repo)
         if r.success:
             return True, f"Already initialized at {target_dir}"
         return False, f"Failed to set remote: {r.stderr}"
 
-    r = clone(repo, target_dir, branch=branch)
+    r = clone(repo, target_dir, branch=branch, sparse=True)
     if not r.success:
         return False, f"Clone failed: {r.stderr}"
+    sparse_checkout_exclude(target_dir, ["_staging"])
     return True, f"Initialized at {target_dir}"
+
+
+def _ensure_sparse_checkout(repo_dir: Path) -> None:
+    """Ensure sparse-checkout is configured to exclude _staging/."""
+    info_dir = repo_dir / ".git" / "info"
+    sc_file = info_dir / "sparse-checkout"
+    if sc_file.exists():
+        return
+    sparse_checkout_exclude(repo_dir, ["_staging"])
 
 
 def do_init(config: TeamMemoryConfig, project_root: Path | None = None, quiet: bool = False) -> tuple[bool, str]:
@@ -87,6 +99,7 @@ def do_pull(config: TeamMemoryConfig, project_root: Path | None = None, quiet: b
     if not is_git_repo(tm_dir):
         return do_init(config, root, quiet)
 
+    _ensure_sparse_checkout(tm_dir)
     r = pull(tm_dir, "origin", config.team_branch)
     team_msg = r.stdout.strip() if r.success else f"Pull failed: {r.stderr}"
     if not r.success:

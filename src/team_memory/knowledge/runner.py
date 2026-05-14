@@ -65,6 +65,13 @@ def run_knowledge_extract(
     if not staging_files:
         return "无待审核记忆，跳过知识提取。"
 
+    # 3.5 增量过滤：排除已处理的 staging 文件
+    if not force:
+        processed = _load_processed_staging(knowledge_dir)
+        staging_files = [f for f in staging_files if f.get("path", "") not in processed]
+        if not staging_files:
+            return "无新待处理记忆，跳过知识提取。"
+
     # 4. 获取要运行的提取器
     if extractor_name:
         cls = get_extractor_by_name(extractor_name)
@@ -148,7 +155,18 @@ def run_knowledge_extract(
     if not dry_run and results:
         update_knowledge_index(knowledge_dir)
 
-    # 9. Git commit（不 push）
+    # 9. 记录已处理的 staging 文件
+    if not dry_run:
+        all_matched_paths: list[str] = []
+        for cls in extractor_classes:
+            extractor = cls()
+            extractor.tags = _get_extractor_tags(cls.name, config)
+            matched = extractor.input_filter(staging_files)
+            all_matched_paths.extend(m.get("path", "") for m in matched)
+        if all_matched_paths:
+            _save_processed_staging(knowledge_dir, all_matched_paths)
+
+    # 10. Git commit（不 push）
     if not dry_run and any("→" in r for r in results):
         _git_commit(tm_dir, "知识提取：归纳 _staging/ 记忆为知识文档", kpath)
 
@@ -577,6 +595,42 @@ def _doc_timestamp(doc) -> float:
         return _time.mktime(t)
     except Exception:
         return 0
+
+
+# ─── staging 增量处理 ────────────────────────────────────────────────────
+
+def _load_processed_staging(knowledge_dir: Path) -> set[str]:
+    """加载已处理的 staging 文件路径集合。"""
+    state_file = knowledge_dir / ".extracted-staging.json"
+    if not state_file.is_file():
+        return set()
+    try:
+        data = json.loads(state_file.read_text())
+        return set(data.get("processed", []))
+    except (json.JSONDecodeError, OSError):
+        return set()
+
+
+def _save_processed_staging(knowledge_dir: Path, new_paths: list[str]) -> None:
+    """追加保存已处理的 staging 文件路径。
+
+    路径格式与 _scan_staging_with_metadata 返回的 path 字段一致
+    （相对于 _staging/ 目录，不含 _staging/ 前缀）。
+    """
+    knowledge_dir.mkdir(parents=True, exist_ok=True)
+    state_file = knowledge_dir / ".extracted-staging.json"
+
+    existing = _load_processed_staging(knowledge_dir)
+    # 确保路径不含 _staging/ 前缀
+    normalized = set()
+    for p in new_paths:
+        if p.startswith("_staging/"):
+            p = p[len("_staging/"):]
+        normalized.add(p)
+    existing.update(normalized)
+
+    data = {"processed": sorted(existing)}
+    state_file.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
 
 
 # ─── knowledge review ────────────────────────────────────────────────────

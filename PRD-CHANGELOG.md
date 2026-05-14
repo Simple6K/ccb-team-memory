@@ -1,5 +1,37 @@
 # PRD 变更记录
 
+## 变更 V4.10.2 — _staging/ 排除拉取 + knowledge extract 增量处理
+
+**日期**: 2026-05-14
+**版本**: V4.10.1 → V4.10.2
+**变更类型**: 性能优化 — 拉取排除待审核目录 + 二次提取增量处理
+
+### 背景
+
+`team-memory pull` 会拉取全量内容含 `_staging/`，但待审核记忆不需要跨项目同步。同时 `knowledge extract` 每次全量扫描 `_staging/`，已处理文件被重复交给 AI。
+
+### 变更
+
+**pull 排除 _staging/**：使用 git sparse-checkout 排除 `_staging/` 目录。clone 时使用 `--sparse` 参数，已有仓库自动检测并设置。`_staging/` 仅本地存储。
+
+**knowledge extract 增量处理**：在 `knowledge/` 目录下维护 `.extracted-staging.json` 清单，记录已处理的 staging 文件路径。提取时只处理未处理的文件，`--force` 参数可强制全量重新提取。
+
+**其他修复**：SessionStart hook 加入 `knowledge pull`；SKILL.md 注册 knowledge 系列命令；修复双重 `kn-` 前缀问题。
+
+### 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `utils/git.py` | 新增 `sparse_checkout_exclude()`；`clone()` 支持 `--sparse` 参数 |
+| `services/sync.py` | `_init_single_repo()` clone 后设置 sparse-checkout；新增 `_ensure_sparse_checkout()` |
+| `knowledge/runner.py` | 新增 `_load_processed_staging()` / `_save_processed_staging()`；`run_knowledge_extract()` 增量过滤 |
+| `knowledge/store.py` | `scan_knowledge_docs()` 跳过 `.extracted-staging.json` |
+| `services/installer.py` | SessionStart hook 加入 `knowledge pull` |
+| `templates/SKILL.md` | 注册 knowledge 系列命令 |
+| `PRD.md` | pull 说明增加 sparse-checkout；extract 流程说明增量处理 |
+
+---
+
 ## 变更 V4.10.1 — 远程路径可配置 + Knowledge Review
 
 **日期**: 2026-05-12

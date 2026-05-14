@@ -90,6 +90,9 @@ def scan_knowledge_docs(knowledge_dir: Path) -> list[KnowledgeDoc]:
         # 跳过 tag-dict（不是知识文档）
         if md_file.name == ".tag-dict.yaml":
             continue
+        # 跳过 staging 增量状态文件
+        if md_file.name == ".extracted-staging.json":
+            continue
         try:
             content = md_file.read_text()
             fm = _parse_knowledge_frontmatter(content)

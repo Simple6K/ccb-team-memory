@@ -73,14 +73,38 @@ def is_git_repo(path: Path) -> bool:
     return (path / ".git").is_dir()
 
 
-def clone(repo_url: str, target: Path, depth: int = 1, branch: str = "main") -> GitResult:
+def clone(repo_url: str, target: Path, depth: int = 1, branch: str = "main",
+          sparse: bool = False) -> GitResult:
     """Shallow clone a git repository."""
     target.parent.mkdir(parents=True, exist_ok=True)
-    return _run(
-        target.parent,
-        "clone", "--depth", str(depth), "--branch", branch,
-        repo_url, str(target.name),
-    )
+    args = ["clone", "--depth", str(depth), "--branch", branch]
+    if sparse:
+        args.append("--sparse")
+    args.extend([repo_url, str(target.name)])
+    return _run(target.parent, *args)
+
+
+def sparse_checkout_set(path: Path, dirs: list[str]) -> GitResult:
+    """Set sparse-checkout to only include specified directories (cone mode)."""
+    args = ["sparse-checkout", "set", "--cone"] + dirs
+    return _run(path, *args)
+
+
+def sparse_checkout_exclude(path: Path, exclude_dirs: list[str]) -> GitResult:
+    """Set sparse-checkout to exclude specific directories.
+
+    Uses non-cone mode with negation patterns.
+    """
+    # Write sparse-checkout file manually for negation patterns
+    info_dir = path / ".git" / "info"
+    info_dir.mkdir(parents=True, exist_ok=True)
+    lines = ["/*"]
+    for d in exclude_dirs:
+        lines.append(f"!{d}/")
+    (info_dir / "sparse-checkout").write_text("\n".join(lines) + "\n")
+    # Enable sparse-checkout
+    _run(path, "config", "core.sparseCheckout", "true")
+    return GitResult(success=True)
 
 
 def init(target: Path) -> GitResult:
