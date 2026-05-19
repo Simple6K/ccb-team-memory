@@ -254,7 +254,7 @@ def cmd_extract_batch(args: argparse.Namespace) -> None:
         return
 
     max_sessions = getattr(args, "max_sessions", None)
-    if max_sessions:
+    if max_sessions is not None:
         session_files = session_files[:max_sessions]
 
     # 2. dry-run 模式

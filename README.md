@@ -88,7 +88,8 @@ team-memory
 │   ├── prompt       生成提取 prompt
 │   ├── run          运行自动提取
 │   ├── status       查看提取状态
-│   └── history      查看提取历史
+│   ├── history      查看提取历史
+│   └── batch        批量历史会话提取（V4.11）
 ├── load             记忆加载
 │   ├── auto         自动加载记忆摘要
 │   └── search       搜索并加载记忆
