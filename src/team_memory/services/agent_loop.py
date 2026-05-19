@@ -277,6 +277,7 @@ def run_extraction_loop(
     project_root: Path,
     memory_dir: Path,
     verbose: bool = False,
+    session_file: Path | None = None,
 ) -> list[str]:
     """运行记忆提取 agent loop。
 
@@ -284,6 +285,9 @@ def run_extraction_loop(
     2. 构建提取提示词
     3. Agent Loop：API 调用 → tool_use → 执行 → 继续
     4. 返回已写入的文件路径列表
+
+    Args:
+        session_file: 指定会话文件路径。为 None 时自动发现最新会话。
 
     Returns:
         已写入/编辑的文件路径列表
@@ -303,14 +307,19 @@ def run_extraction_loop(
     _v(f"agent_loop: model={model}")
 
     # 2. 读取 transcript
-    project_dir = find_project_dir(project_root)
-    if not project_dir:
-        _v(f"agent_loop: project_dir not found for root={project_root}")
-        return []
+    if session_file is None:
+        project_dir = find_project_dir(project_root)
+        if not project_dir:
+            _v(f"agent_loop: project_dir not found for root={project_root}")
+            return []
 
-    session_file = find_session_dir(project_dir)
-    if not session_file:
-        _v(f"agent_loop: no session file in {project_dir}")
+        session_file = find_session_dir(project_dir)
+        if not session_file:
+            _v(f"agent_loop: no session file in {project_dir}")
+            return []
+
+    if not session_file.is_file():
+        _v(f"agent_loop: session file not found: {session_file}")
         return []
 
     recent_messages = read_recent_messages(session_file)

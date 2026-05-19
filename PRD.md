@@ -411,6 +411,23 @@ team-memory extract history   # 查看提取历史
 team-memory extract status    # 增强：显示类型统计 + 上次提取信息
 ```
 
+### 3.7.1 批量历史会话提取（V4.11 新增）
+
+从多个旧 session transcript 中批量提取记忆，适用于迁移历史项目或补提遗漏会话。
+
+```bash
+team-memory extract batch [--source <path>] [--max-sessions N] [--dry-run]
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--source` | .jsonl 文件或目录路径。默认自动发现当前项目 session 目录 |
+| `--max-sessions` | 最多处理 N 个会话 |
+| `--dry-run` | 仅预览会话文件和消息数量 |
+| `--verbose` | 诊断输出 |
+
+流程：扫描 .jsonl 文件 → 逐个调用提取流水线 → 写入 `_staging/` → 可通过 `knowledge extract` 二次归纳。
+
 ### 3.8 记忆验证（V4.6 新增）
 
 **对应 claude-code**：`extractWrittenPaths()` + frontmatter 校验（`extractMemories.ts:437`）
@@ -979,7 +996,8 @@ team-memory
 │   ├── prompt  [--mode auto|instruction|manual]  生成提取 prompt
 │   ├── run      [--push-on-count N] [--push-on-minutes M]  运行自动提取（异步 agent loop，可选条件推送）
 │   ├── status                                   查看提取状态
-│   └── history                                  查看提取历史
+│   ├── history                                  查看提取历史
+│   └── batch   [--source PATH] [--max-sessions N] [--dry-run]  批量历史会话提取（V4.11）
 ├── load
 │   ├── auto                                     自动加载记忆摘要
 │   ├── search [query] [--type]                  搜索并加载记忆

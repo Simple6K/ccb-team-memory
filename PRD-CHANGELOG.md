@@ -1,5 +1,39 @@
 # PRD 变更记录
 
+## 变更 V4.11 — 批量历史会话提取
+
+**日期**: 2026-05-15
+**版本**: V4.10.2 → V4.11
+**变更类型**: 功能新增 — 批量从旧 session transcript 中提取记忆
+
+### 背景
+
+用户有 100+ 个旧 ccb-dev session transcript（.jsonl 文件），需要批量处理这些旧会话，提取记忆写入 `_staging/`，再通过 `knowledge extract` 二次归纳为知识文档。现有系统只处理最新一个会话，没有批量处理能力。
+
+### 变更
+
+**`extract batch` 命令**：新增批量提取子命令，支持从指定目录或单个 .jsonl 文件批量提取记忆。
+
+- `--source`：指定 .jsonl 文件或目录路径，默认自动发现当前项目的 session 目录
+- `--max-sessions`：限制处理会话数量
+- `--dry-run`：仅列出会话文件和消息数量，不调用 API
+- `--verbose`：输出诊断信息
+
+**底层改动**：
+- `transcript.py` 新增 `find_all_session_files()` 返回所有 .jsonl 文件（按 mtime 降序）
+- `agent_loop.py` 的 `run_extraction_loop()` 新增 `session_file` 参数，支持指定会话文件
+
+### 修改文件
+
+| 文件 | 改动 |
+|------|------|
+| `utils/transcript.py` | 新增 `find_all_session_files()` |
+| `services/agent_loop.py` | `run_extraction_loop()` 增加 `session_file` 参数 |
+| `cli/extract.py` | 新增 `cmd_extract_batch()` + `batch` 子命令注册 |
+| `PRD.md` | §3.7.1 批量提取说明 + CLI 命令树增加 `batch` |
+
+---
+
 ## 变更 V4.10.2 — _staging/ 排除拉取 + knowledge extract 增量处理
 
 **日期**: 2026-05-14

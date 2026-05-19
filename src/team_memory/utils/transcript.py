@@ -133,6 +133,35 @@ def find_session_dir(project_dir: Path) -> Path | None:
     return sessions[0][1]
 
 
+def find_all_session_files(project_dir: Path) -> list[Path]:
+    """返回项目目录下所有 .jsonl session 文件（按 mtime 降序排列）。
+
+    用于批量历史会话提取。
+    """
+    if not project_dir.is_dir():
+        return []
+
+    sessions: list[tuple[float, Path]] = []
+    try:
+        for f in project_dir.iterdir():
+            if not f.is_file():
+                continue
+            if f.suffix != ".jsonl":
+                continue
+            if f.name.endswith(".backup") or f.name.endswith(".backup2"):
+                continue
+            try:
+                st = f.stat()
+                sessions.append((st.st_mtime, f))
+            except OSError:
+                continue
+    except OSError:
+        return []
+
+    sessions.sort(key=lambda x: x[0], reverse=True)
+    return [s[1] for s in sessions]
+
+
 def read_recent_messages(
     session_file: Path,
     since: str | None = None,

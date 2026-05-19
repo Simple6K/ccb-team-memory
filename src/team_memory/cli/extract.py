@@ -15,6 +15,12 @@ from ..services.extract import (
     scan_manifest,
 )
 from ..services.extraction_manager import ExtractionManager
+from ..utils.transcript import (
+    find_project_dir,
+    find_all_session_files,
+    read_recent_messages,
+    format_messages_for_api,
+)
 
 
 def _verbose(args: argparse.Namespace, msg: str) -> None:
@@ -212,6 +218,85 @@ def cmd_extract_run(args: argparse.Namespace) -> None:
             _verbose(args, f"push error: {e}")
 
 
+def cmd_extract_batch(args: argparse.Namespace) -> None:
+    """批量历史会话提取：从多个 .jsonl 文件中批量提取记忆。"""
+    root = find_project_root()
+    config = load_team_memory_config(root)
+    if not config:
+        print("未配置团队记忆。", file=sys.stderr)
+        sys.exit(1)
+
+    tm_dir = get_team_memory_dir(root)
+    verbose = getattr(args, "verbose", False)
+
+    # 1. 发现 session 文件
+    source = getattr(args, "source", None)
+    if source:
+        source_path = Path(source)
+        if source_path.is_file():
+            session_files = [source_path]
+        elif source_path.is_dir():
+            session_files = find_all_session_files(source_path)
+        else:
+            print(f"源路径不存在: {source}", file=sys.stderr)
+            sys.exit(1)
+    else:
+        project_dir = find_project_dir(root)
+        if not project_dir:
+            print("未找到项目 session 目录。使用 --source 指定路径。", file=sys.stderr)
+            sys.exit(1)
+        session_files = find_all_session_files(project_dir)
+
+    if not session_files:
+        print("未找到任何 .jsonl 会话文件。")
+        return
+
+    max_sessions = getattr(args, "max_sessions", None)
+    if max_sessions:
+        session_files = session_files[:max_sessions]
+
+    # 2. dry-run 模式
+    dry_run = getattr(args, "dry_run", False)
+    if dry_run:
+        print(f"─── 批量提取预览（{len(session_files)} 个会话）───")
+        for i, sf in enumerate(session_files, 1):
+            msgs = read_recent_messages(sf, max_messages=9999)
+            print(f"  {i}. {sf.name} ({len(msgs)} 条消息)")
+        return
+
+    # 3. 逐个提取
+    from ..services.agent_loop import run_extraction_loop
+
+    total_files: list[str] = []
+    skipped = 0
+    errors = 0
+
+    print(f"─── 批量提取开始（{len(session_files)} 个会话）───")
+    for i, sf in enumerate(session_files, 1):
+        _verbose(args, f"[{i}/{len(session_files)}] processing {sf.name}")
+        try:
+            files = run_extraction_loop(
+                config, root, tm_dir,
+                verbose=verbose,
+                session_file=sf,
+            )
+            if files:
+                total_files.extend(files)
+                print(f"  [{i}/{len(session_files)}] {sf.name} → {len(files)} 条记忆")
+            else:
+                skipped += 1
+                _verbose(args, f"[{i}/{len(session_files)}] {sf.name} → 无记忆")
+        except Exception as e:
+            errors += 1
+            _verbose(args, f"[{i}/{len(session_files)}] {sf.name} → 错误: {e}")
+
+    print(f"\n─── 批量提取完成 ───")
+    print(f"  处理会话: {len(session_files)}")
+    print(f"  提取记忆: {len(total_files)}")
+    print(f"  跳过: {skipped}")
+    print(f"  错误: {errors}")
+
+
 def register_extract_parsers(sub: argparse._SubParsersAction) -> None:
     p = sub.add_parser("extract", help="Memory extraction commands")
     sub_extract = p.add_subparsers(dest="extract_command")
@@ -235,3 +320,13 @@ def register_extract_parsers(sub: argparse._SubParsersAction) -> None:
     pr.add_argument("--verbose", action="store_true",
                     help="Print diagnostic info to stderr")
     pr.set_defaults(func=cmd_extract_run)
+
+    pb = sub_extract.add_parser("batch", help="Batch extract memories from multiple session files")
+    pb.add_argument("--source", help="Path to .jsonl file or directory of .jsonl files")
+    pb.add_argument("--max-sessions", type=int, default=None,
+                    help="Maximum number of sessions to process")
+    pb.add_argument("--dry-run", action="store_true",
+                    help="Preview sessions without extracting")
+    pb.add_argument("--verbose", action="store_true",
+                    help="Print diagnostic info to stderr")
+    pb.set_defaults(func=cmd_extract_batch)
