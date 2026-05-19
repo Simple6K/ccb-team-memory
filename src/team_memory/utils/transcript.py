@@ -162,6 +162,38 @@ def find_all_session_files(project_dir: Path) -> list[Path]:
     return [s[1] for s in sessions]
 
 
+def find_all_session_files_recursive(
+    base_dir: Path,
+    *,
+    exclude_subagents: bool = True,
+) -> list[Path]:
+    """递归扫描目录，返回所有主会话 .jsonl 文件（按 mtime 降序排列）。
+
+    适配嵌套目录结构：projects/<hash>/<session>.jsonl
+    排除 subagents/ 子目录中的文件（只保留主会话）。
+    """
+    if not base_dir.is_dir():
+        return []
+
+    sessions: list[tuple[float, Path]] = []
+    try:
+        for f in base_dir.rglob("*.jsonl"):
+            if f.name.endswith(".backup") or f.name.endswith(".backup2"):
+                continue
+            if exclude_subagents and "subagents" in f.parts:
+                continue
+            try:
+                st = f.stat()
+                sessions.append((st.st_mtime, f))
+            except OSError:
+                continue
+    except OSError:
+        return []
+
+    sessions.sort(key=lambda x: x[0], reverse=True)
+    return [s[1] for s in sessions]
+
+
 def read_recent_messages(
     session_file: Path,
     since: str | None = None,
