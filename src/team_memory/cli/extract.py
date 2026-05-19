@@ -6,6 +6,7 @@ V4.6: 新增 extract history 子命令（问题 1, 2）。
 import argparse
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from ..config import find_project_root, get_team_memory_dir, load_team_memory_config
@@ -19,6 +20,7 @@ from ..utils.transcript import (
     find_project_dir,
     find_all_session_files,
     find_all_session_files_recursive,
+    get_session_summary,
     read_recent_messages,
     format_messages_for_api,
 )
@@ -219,8 +221,42 @@ def cmd_extract_run(args: argparse.Namespace) -> None:
             _verbose(args, f"push error: {e}")
 
 
+def _parse_time_arg(s: str) -> str:
+    """将用户输入的时间参数转为 ISO 8601 时间戳。
+
+    支持格式：
+    - '7d' / '30d' → N 天前
+    - '2026-04-01' → 2026-04-01T00:00:00Z
+    - '2026-04-15T10:30:00Z' → 原样返回
+    """
+    if not s:
+        return s
+
+    # 已经是完整 ISO 格式
+    if "T" in s:
+        return s
+
+    # 相对天数: '7d', '30d'
+    import re
+    m = re.match(r"^(\d+)d$", s)
+    if m:
+        days = int(m.group(1))
+        dt = datetime.now(timezone.utc) - timedelta(days=days)
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # 日期格式: '2026-04-01'
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+        return f"{s}T00:00:00Z"
+
+    return s
+
+
 def cmd_extract_batch(args: argparse.Namespace) -> None:
-    """批量历史会话提取：从多个 .jsonl 文件中批量提取记忆。"""
+    """批量历史会话提取：从多个 .jsonl 文件中批量提取记忆。
+
+    支持时间筛选（--since/--until）和交互式会话选择。
+    默认进入交互选择模式，--no-pick 跳过交互直接处理全部。
+    """
     project_root_arg = getattr(args, "project_root", None)
     root = Path(project_root_arg) if project_root_arg else find_project_root()
     config = load_team_memory_config(root)
@@ -253,20 +289,86 @@ def cmd_extract_batch(args: argparse.Namespace) -> None:
         print("未找到任何 .jsonl 会话文件。")
         return
 
+    # 2. 时间筛选
+    since_raw = getattr(args, "since", None)
+    until_raw = getattr(args, "until", None)
+    since_ts = _parse_time_arg(since_raw) if since_raw else None
+    until_ts = _parse_time_arg(until_raw) if until_raw else None
+
+    if since_ts or until_ts:
+        filtered: list[Path] = []
+        for sf in session_files:
+            ts_range = get_session_summary(sf)
+            if ts_range is None:
+                continue
+            last = ts_range.get("last_ts", "")
+            first = ts_range.get("first_ts", "")
+            if since_ts and last < since_ts:
+                continue
+            if until_ts and first > until_ts:
+                continue
+            filtered.append(sf)
+        session_files = filtered
+        if not session_files:
+            print("时间筛选后无匹配会话。")
+            return
+
     max_sessions = getattr(args, "max_sessions", None)
     if max_sessions is not None:
         session_files = session_files[:max_sessions]
 
-    # 2. dry-run 模式
+    # 3. dry-run 模式
     dry_run = getattr(args, "dry_run", False)
     if dry_run:
         print(f"─── 批量提取预览（{len(session_files)} 个会话）───")
         for i, sf in enumerate(session_files, 1):
-            msgs = read_recent_messages(sf, max_messages=9999)
-            print(f"  {i}. {sf.name} ({len(msgs)} 条消息)")
+            summary = get_session_summary(sf)
+            if summary:
+                date = summary.get("date", "?")
+                count = summary.get("message_count", 0)
+                first_msg = summary.get("first_user_msg", "")
+                preview = f"{first_msg[:50]}…" if first_msg else ""
+                print(f"  {i:>4}. {date}  {count:>4}条  {preview}  ({sf.name})")
+            else:
+                print(f"  {i:>4}. {sf.name}")
         return
 
-    # 3. 逐个提取
+    # 4. 交互式选择（默认启用，--no-pick 跳过）
+    no_pick = getattr(args, "no_pick", False)
+    if not no_pick and len(session_files) > 1:
+        from ..utils.picker import PickerItem, pick_items
+
+        picker_items: list[PickerItem] = []
+        for sf in session_files:
+            summary = get_session_summary(sf)
+            if summary:
+                date = summary.get("date", "?")
+                count = summary.get("message_count", 0)
+                first_msg = summary.get("first_user_msg", "")
+                preview = f"{first_msg[:50]}…" if first_msg else sf.name
+                display = f"{date}  {count:>4}条  {preview}"
+            else:
+                display = sf.name
+            picker_items.append(PickerItem(display=display, meta=sf))
+
+        time_hint = ""
+        if since_ts or until_ts:
+            time_hint = f"（{since_raw or '…'} ~ {until_raw or '…'}）"
+        title = f"批量提取：会话选择  {time_hint}"
+        title += f"\n  共 {len(picker_items)} 个会话"
+
+        selected_indices = pick_items(picker_items, title=title)
+        if selected_indices is None:
+            print("已取消。")
+            return
+
+        session_files = [picker_items[i].meta for i in selected_indices]
+        if not session_files:
+            print("未选择任何会话。")
+            return
+        print(f"\n已选择 {len(session_files)} 个会话，开始提取...")
+
+    # 5. 逐个提取
     from ..services.agent_loop import run_extraction_loop
 
     total_files: list[str] = []
@@ -326,8 +428,12 @@ def register_extract_parsers(sub: argparse._SubParsersAction) -> None:
     pb = sub_extract.add_parser("batch", help="Batch extract memories from multiple session files")
     pb.add_argument("--project-root", help="Project root directory (default: auto-detect from cwd)")
     pb.add_argument("--source", help="Path to .jsonl file or directory of .jsonl files")
+    pb.add_argument("--since", help="Only process sessions after this time (e.g. 2026-04-01, 7d)")
+    pb.add_argument("--until", help="Only process sessions before this time (e.g. 2026-05-01)")
     pb.add_argument("--max-sessions", type=int, default=None,
                     help="Maximum number of sessions to process")
+    pb.add_argument("--no-pick", action="store_true",
+                    help="Skip interactive selection, process all matched sessions")
     pb.add_argument("--dry-run", action="store_true",
                     help="Preview sessions without extracting")
     pb.add_argument("--verbose", action="store_true",

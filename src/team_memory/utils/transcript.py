@@ -290,3 +290,114 @@ def format_messages_for_api(messages: list[dict]) -> list[dict]:
                     formatted.append({"role": "assistant", "content": "\n".join(texts)})
 
     return formatted
+
+
+def get_session_time_range(session_file: Path) -> tuple[str, str] | None:
+    """读取 .jsonl 文件的首条和末条消息时间戳。
+
+    Returns:
+        (first_ts, last_ts) ISO 8601 字符串元组，文件为空时返回 None。
+    """
+    if not session_file.is_file():
+        return None
+
+    first_ts: str | None = None
+    last_ts: str | None = None
+
+    try:
+        with open(session_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                ts = msg.get("timestamp", "")
+                if not ts:
+                    continue
+                if first_ts is None:
+                    first_ts = ts
+                last_ts = ts
+    except OSError:
+        return None
+
+    if first_ts is None or last_ts is None:
+        return None
+    return (first_ts, last_ts)
+
+
+def get_session_summary(session_file: Path) -> dict | None:
+    """提取会话摘要信息，用于交互选择器展示。
+
+    Returns:
+        {
+            "first_ts": "2026-05-07T08:20:23.777Z",
+            "last_ts": "2026-05-07T09:15:00.123Z",
+            "message_count": 42,
+            "first_user_msg": "帮我写一个...",
+            "date": "2026-05-07",
+        }
+        文件为空或不可读时返回 None。
+    """
+    if not session_file.is_file():
+        return None
+
+    first_ts: str | None = None
+    last_ts: str | None = None
+    message_count = 0
+    first_user_msg: str | None = None
+
+    try:
+        with open(session_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+
+                ts = msg.get("timestamp", "")
+                if ts:
+                    if first_ts is None:
+                        first_ts = ts
+                    last_ts = ts
+
+                # 仅计主对话消息
+                if msg.get("isSidechain") is not False:
+                    continue
+                msg_type = msg.get("type")
+                if msg_type not in ("user", "assistant"):
+                    continue
+                message_count += 1
+
+                # 提取第一条 user 消息作为摘要
+                if (
+                    first_user_msg is None
+                    and msg_type == "user"
+                    and not msg.get("isMeta")
+                ):
+                    inner = msg.get("message", {})
+                    content = inner.get("content", "")
+                    if isinstance(content, str) and content.strip():
+                        first_user_msg = content.strip()[:80]
+    except OSError:
+        return None
+
+    if first_ts is None:
+        return None
+
+    # 提取日期部分
+    date = first_ts[:10] if len(first_ts) >= 10 else first_ts
+
+    return {
+        "first_ts": first_ts,
+        "last_ts": last_ts or first_ts,
+        "message_count": message_count,
+        "first_user_msg": first_user_msg or "",
+        "date": date,
+        "file": session_file,
+    }
