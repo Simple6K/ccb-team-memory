@@ -411,22 +411,38 @@ team-memory extract history   # 查看提取历史
 team-memory extract status    # 增强：显示类型统计 + 上次提取信息
 ```
 
-### 3.7.1 批量历史会话提取（V4.11 新增）
+### 3.7.1 批量历史会话提取（V4.11 新增，V4.11.1 增强）
 
 从多个旧 session transcript 中批量提取记忆，适用于迁移历史项目或补提遗漏会话。
 
 ```bash
-team-memory extract batch [--source <path>] [--max-sessions N] [--dry-run]
+team-memory extract batch [--source <path>] [--project-root <path>]
+    [--since <time>] [--until <time>]
+    [--max-sessions N] [--no-pick] [--reset]
+    [--dry-run] [--verbose]
 ```
 
 | 参数 | 说明 |
 |------|------|
 | `--source` | .jsonl 文件或目录路径。默认自动发现当前项目 session 目录 |
+| `--project-root` | 项目根目录（无需 cd 到项目目录即可运行） |
+| `--since` | 起始时间筛选（如 `2026-04-01`、`7d`） |
+| `--until` | 截止时间筛选 |
 | `--max-sessions` | 最多处理 N 个会话 |
+| `--no-pick` | 跳过交互式选择，直接处理全部匹配会话 |
+| `--reset` | 清除断点续传状态，重新处理所有会话 |
 | `--dry-run` | 仅预览会话文件和消息数量 |
 | `--verbose` | 诊断输出 |
 
-流程：扫描 .jsonl 文件 → 逐个调用提取流水线 → 写入 `_staging/` → 可通过 `knowledge extract` 二次归纳。
+**交互式选择器**（V4.11.1）：默认进入终端交互界面，箭头键上下移动、空格选中/取消、`a` 全选、`q` 全不选、Enter 确认。支持视口滚动，显示每个会话的日期、消息数和首条用户消息预览。非 TTY 环境（ccb skill 调用）自动提示使用 `--no-pick`。
+
+**时间筛选**（V4.11.1）：`--since`/`--until` 支持 ISO 日期（`2026-04-01`）和相对时间（`7d` = 7天前）。按会话的首末消息时间戳过滤。
+
+**进度条**（V4.11.1）：提取过程中显示 `[15/351] ██████░░░░ 4.3% session-xxx.jsonl` 格式进度。
+
+**断点续传**（V4.11.1）：`_staging/.batch-state.json` 记录已处理 session 文件名。中途退出后再次运行自动跳过已处理会话。`--reset` 清除状态重新提取。全量提取无重复。
+
+流程：扫描 .jsonl → 时间筛选 → 交互选择 → 逐个提取（进度条 + 断点续传）→ 写入 `_staging/` → 可通过 `knowledge extract` 二次归纳。
 
 ### 3.8 记忆验证（V4.6 新增）
 
@@ -997,7 +1013,7 @@ team-memory
 │   ├── run      [--push-on-count N] [--push-on-minutes M]  运行自动提取（异步 agent loop，可选条件推送）
 │   ├── status                                   查看提取状态
 │   ├── history                                  查看提取历史
-│   └── batch   [--source PATH] [--max-sessions N] [--dry-run]  批量历史会话提取（V4.11）
+│   └── batch   [--source PATH] [--since TIME] [--until TIME] [--max-sessions N] [--no-pick] [--reset] [--dry-run]  批量历史会话提取（V4.11，交互选择 + 时间筛选 + 断点续传）
 ├── load
 │   ├── auto                                     自动加载记忆摘要
 │   ├── search [query] [--type]                  搜索并加载记忆
