@@ -80,8 +80,9 @@ class TerminalPicker:
             return []
 
         if not _is_terminal():
-            # 非 TTY 环境（管道、子进程等）→ 全选
-            return list(range(len(self.items)))
+            # 非 TTY 环境（管道、子进程、ccb skill 等）→ 返回 None 表示跳过交互
+            # 调用方应根据 None 决定行为（如打印提示或使用 --no-pick）
+            return None
 
         try:
             self._enter_raw_mode()

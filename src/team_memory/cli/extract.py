@@ -359,7 +359,9 @@ def cmd_extract_batch(args: argparse.Namespace) -> None:
 
         selected_indices = pick_items(picker_items, title=title)
         if selected_indices is None:
-            print("已取消。")
+            # 非 TTY 环境（ccb skill、管道等）→ 打印提示，改用 --no-pick
+            print("交互选择需要终端环境。请在终端中运行此命令，或使用 --no-pick 直接处理全部。")
+            print(f"  提示: team-memory extract batch --project-root {root} --no-pick")
             return
 
         session_files = [picker_items[i].meta for i in selected_indices]
@@ -368,16 +370,47 @@ def cmd_extract_batch(args: argparse.Namespace) -> None:
             return
         print(f"\n已选择 {len(session_files)} 个会话，开始提取...")
 
-    # 5. 逐个提取
+    # 5. 断点续传：加载已处理状态
+    state_file = tm_dir / "_staging" / ".batch-state.json"
+    processed: set[str] = set()
+    if not getattr(args, "reset", False) and state_file.is_file():
+        try:
+            data = json.loads(state_file.read_text(encoding="utf-8"))
+            processed = set(data.get("processed", []))
+            if processed:
+                before = len(session_files)
+                session_files = [sf for sf in session_files if sf.name not in processed]
+                resumed = before - len(session_files)
+                if resumed:
+                    print(f"  断点续传：跳过 {resumed} 个已处理会话，剩余 {len(session_files)} 个")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    if not session_files:
+        print("所有会话已处理完毕。使用 --reset 重新提取。")
+        return
+
+    # 6. 逐个提取 + 进度条
     from ..services.agent_loop import run_extraction_loop
 
+    total = len(session_files)
     total_files: list[str] = []
     skipped = 0
     errors = 0
 
-    print(f"─── 批量提取开始（{len(session_files)} 个会话）───")
+    print(f"─── 批量提取开始（{total} 个会话）───")
+
     for i, sf in enumerate(session_files, 1):
-        _verbose(args, f"[{i}/{len(session_files)}] processing {sf.name}")
+        # 进度条
+        pct = i / total * 100
+        bar_len = 30
+        filled = int(bar_len * i / total)
+        bar = "█" * filled + "░" * (bar_len - filled)
+        progress = f"\r  [{i}/{total}] {bar} {pct:5.1f}% {sf.name[:40]}"
+        sys.stdout.write(progress)
+        sys.stdout.flush()
+
+        _verbose(args, f"[{i}/{total}] processing {sf.name}")
         try:
             files = run_extraction_loop(
                 config, root, tm_dir,
@@ -386,16 +419,26 @@ def cmd_extract_batch(args: argparse.Namespace) -> None:
             )
             if files:
                 total_files.extend(files)
-                print(f"  [{i}/{len(session_files)}] {sf.name} → {len(files)} 条记忆")
+                sys.stdout.write(f"\r  [{i}/{total}] {sf.name} → {len(files)} 条记忆  \n")
             else:
                 skipped += 1
-                _verbose(args, f"[{i}/{len(session_files)}] {sf.name} → 无记忆")
         except Exception as e:
             errors += 1
-            _verbose(args, f"[{i}/{len(session_files)}] {sf.name} → 错误: {e}")
+            _verbose(args, f"[{i}/{total}] {sf.name} → 错误: {e}")
+
+        # 每处理一个就记录状态（断点续传）
+        processed.add(sf.name)
+        try:
+            state_file.parent.mkdir(parents=True, exist_ok=True)
+            state_file.write_text(
+                json.dumps({"processed": sorted(processed), "last_run": datetime.now(timezone.utc).isoformat()}, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
 
     print(f"\n─── 批量提取完成 ───")
-    print(f"  处理会话: {len(session_files)}")
+    print(f"  处理会话: {total}")
     print(f"  提取记忆: {len(total_files)}")
     print(f"  跳过: {skipped}")
     print(f"  错误: {errors}")
@@ -434,6 +477,8 @@ def register_extract_parsers(sub: argparse._SubParsersAction) -> None:
                     help="Maximum number of sessions to process")
     pb.add_argument("--no-pick", action="store_true",
                     help="Skip interactive selection, process all matched sessions")
+    pb.add_argument("--reset", action="store_true",
+                    help="Clear batch state and reprocess all sessions")
     pb.add_argument("--dry-run", action="store_true",
                     help="Preview sessions without extracting")
     pb.add_argument("--verbose", action="store_true",
